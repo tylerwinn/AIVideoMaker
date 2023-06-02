@@ -2,7 +2,6 @@ import os
 import re
 import sys
 import requests
-import openai
 import textwrap
 from pydub import AudioSegment
 from moviepy.editor import ImageSequenceClip, AudioFileClip, CompositeVideoClip, ColorClip, TextClip
@@ -23,7 +22,6 @@ def init():
     base_path = os.path.dirname(os.path.abspath(__file__))
     credential_path = os.path.join(base_path, "bin", "analog-daylight-387914-be5cfb00ab87.json")
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credential_path
-    openai.api_key = "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"
 
 def generate_story(story_prompt, story_length):
     url = "https://chatgpt-proxy.herokuapp.com/api/chat/completions"
@@ -43,14 +41,17 @@ def generate_story(story_prompt, story_length):
 
 def generate_image(image_prompt, tone, modifier, count):
     image_prompt += ' ' + tone + ' ' + modifier
-    response = openai.Image.create(
-        prompt=image_prompt,
-        n=count,
-        size="512x512"
-    )
+    url = "https://chatgpt-proxy.herokuapp.com/api/images"  # Replace with your Heroku app's URL
+
+    payload = {
+        "prompt": image_prompt,
+        "n": count,
+        "size": "512x512"
+    }
+    response = requests.post(url, json=payload)
 
     image_paths = []
-    for i, data in enumerate(response['data']):
+    for i, data in enumerate(response.json()['data']):
         image_url = data['url']
         filename = re.sub(r'\W+', '', image_prompt) + f"_version_{i}.png"
 
