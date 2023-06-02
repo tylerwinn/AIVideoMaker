@@ -177,7 +177,7 @@ def generate_video(media_paths, output_filename):
     final_clip.write_videofile(output_filename, codec='libx264', fps=24)
 
     # Delete the temporary combined audio file
-    os.remove("combined_audio.mp3")
+    os.remove("audio/combined_audio.wav")
 
 if __name__ == "__main__":
     # Check if a story prompt argument is provided
