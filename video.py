@@ -26,16 +26,18 @@ def init():
     openai.api_key = "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"
 
 def generate_story(story_prompt, story_length):
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        temperature=float(.7),
-        messages=[
+    url = "https://chatgpt-proxy.herokuapp.com/api/chat/completions"
+    payload = {
+        "model": "gpt-3.5-turbo",
+        "messages": [
             {"role": "system", "content": f"You are an award-winning short story writer. Your works remind the reader of the works of Ernest Hemingway, Stephen King, and Ray Bradbury. Your story should only be {story_length} paragraphs long."},
             {"role": "user", "content": f"Please write a {story_prompt} story. Ensure that the tension constantly rises throughout, and concludes with the climax. Exclude a resolution paragrah/sentence."}
         ]
-    )
-
-    response_content = response['choices'][0]['message']['content']
+    }
+    response = requests.post(url, json=payload)
+    print(response)
+    response_content = response.json()['choices'][0]['message']['content']
+    print(response_content)
     sentences = sent_tokenize(response_content)
     return sentences
 
