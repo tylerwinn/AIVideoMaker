@@ -7,8 +7,11 @@ from pydub import AudioSegment
 from moviepy.editor import ImageSequenceClip, AudioFileClip, CompositeVideoClip, ColorClip, TextClip
 from nltk.tokenize import sent_tokenize
 from google.cloud import texttospeech
+from pytrends.request import TrendReq
 
 global client
+
+#
 
 def init():
     # Create the "images" folder if it doesn't exist
@@ -24,14 +27,19 @@ def init():
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credential_path
 
 def generate_story(story_prompt, story_length):
+
+    top_results=top_trending_searches(5)
+    top_results_str = ', '.join(top_results)  # Convert list to string
     url = "https://chatgpt-proxy.herokuapp.com/api/chat/completions"
     payload = {
         "model": "gpt-3.5-turbo",
         "messages": [
-            {"role": "system", "content": f"You are an award-winning short story writer. Your works remind the reader of the works of Ernest Hemingway, Stephen King, and Ray Bradbury. Your story should only be {story_length} paragraphs long."},
-            {"role": "user", "content": f"Please write a {story_prompt} story. Ensure that the tension constantly rises throughout, and concludes with the climax. Exclude a resolution paragrah/sentence."}
+            {"role": "system", "content": f"Make sure to use the following words in your story. Take their order into account, the first terms are most popular. {top_results_str}. Your story should only be {story_length} paragraphs long."},
+            {"role": "user", "content": f"Please write a {story_prompt} story."}
         ]
     }
+    print(payload)
+    #sys.exit()
     response = requests.post(url, json=payload)
     print(response)
     response_content = response.json()['choices'][0]['message']['content']
@@ -181,6 +189,12 @@ def generate_video(media_paths, output_filename):
 
     # Delete the temporary combined audio file
     os.remove("audio/combined_audio.wav")
+
+def top_trending_searches(n):
+    pytrends = TrendReq(hl='en-US', tz=360)
+    trending_searches_df = pytrends.trending_searches(pn='united_states')
+    trending_searches_list = trending_searches_df[0].values.tolist()
+    return trending_searches_list[:n]
 
 if __name__ == "__main__":
     # Check if a story prompt argument is provided
