@@ -1,218 +1,321 @@
 import os
 import re
-import sys
+import shutil
 import requests
 import textwrap
 from pydub import AudioSegment
-from moviepy.editor import ImageSequenceClip, AudioFileClip, CompositeVideoClip, ColorClip, TextClip
+from moviepy.editor import (
+    ImageSequenceClip,
+    AudioFileClip,
+    CompositeVideoClip,
+    ColorClip,
+    TextClip,
+)
 from nltk.tokenize import sent_tokenize
 from google.cloud import texttospeech
 from pytrends.request import TrendReq
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
+from kivy.uix.checkbox import CheckBox  # Updated import statement
+from kivy.uix.button import Button
+from kivy.uix.textinput import TextInput
+from kivy.uix.progressbar import ProgressBar
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.gridlayout import GridLayout
+from kivy.clock import Clock
+from kivy.core.window import Window
+from kivy.utils import get_color_from_hex
+import threading
 
-global client
 
-#
+class StoryGeneratorApp(App):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        
+        # Delete the contents of the "images" directory if it exists
+        images_dir = "images"
+        if os.path.exists(images_dir):
+            shutil.rmtree(images_dir)
+        os.makedirs(images_dir)
+        
+        # Delete the contents of the "audio" directory if it exists
+        audio_dir = "audio"
+        if os.path.exists(audio_dir):
+            shutil.rmtree(audio_dir)
+        os.makedirs(audio_dir)
 
-def init():
-    # Create the "images" folder if it doesn't exist
-    if not os.path.exists("images"):
-        os.makedirs("images")
+        # Specify your Google credentials JSON file here
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        credential_path = os.path.join(base_path, "your_google_credentials.json")  # Change this to your credentials file
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credential_path
 
-    # Ensure the 'audio' directory exists
-    if not os.path.exists('audio'):
-        os.makedirs('audio')
 
-    base_path = os.path.dirname(os.path.abspath(__file__))
-    credential_path = os.path.join(base_path, "bin", "analog-daylight-387914-be5cfb00ab87.json")
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credential_path
+    def build(self):
+        layout = BoxLayout(orientation="vertical")
 
-def generate_story(story_prompt, story_length):
+        tone_label = Label(text="Enter a tone:")
+        self.tone_input = TextInput(multiline=False)
+        layout.add_widget(tone_label)
+        layout.add_widget(self.tone_input)
 
-    top_results=top_trending_searches(5)
-    top_results_str = ', '.join(top_results)  # Convert list to string
-    url = "https://chatgpt-proxy.herokuapp.com/api/chat/completions"
-    payload = {
-        "model": "gpt-3.5-turbo",
-        "messages": [
-            {"role": "system", "content": f"Make sure to use the following words in your story. Take their order into account, the first terms are most popular. {top_results_str}. Your story should only be {story_length} paragraphs long."},
-            {"role": "user", "content": f"Please write a {story_prompt} story."}
-        ]
-    }
-    print(payload)
-    #sys.exit()
-    response = requests.post(url, json=payload)
-    print(response)
-    response_content = response.json()['choices'][0]['message']['content']
-    print(response_content)
-    sentences = sent_tokenize(response_content)
-    return sentences
+        length_label = Label(text="Enter a story length:")
+        self.length_input = TextInput(multiline=False)
+        layout.add_widget(length_label)
+        layout.add_widget(self.length_input)
 
-def generate_image(image_prompt, tone, modifier, count):
-    image_prompt += ' ' + tone + ' ' + modifier
-    url = "https://chatgpt-proxy.herokuapp.com/api/images"  # Replace with your Heroku app's URL
+        modifier_label = Label(text="Enter an image modifier:")
+        self.modifier_input = TextInput(multiline=False)
+        layout.add_widget(modifier_label)
+        layout.add_widget(self.modifier_input)
 
-    payload = {
-        "prompt": image_prompt,
-        "n": count,
-        "size": "512x512"
-    }
-    response = requests.post(url, json=payload)
+        count_label = Label(text="Enter the number of images per sentence:")
+        self.count_input = TextInput(multiline=False)
+        layout.add_widget(count_label)
+        layout.add_widget(self.count_input)
 
-    image_paths = []
-    for i, data in enumerate(response.json()['data']):
-        image_url = data['url']
-        filename = re.sub(r'\W+', '', image_prompt) + f"_version_{i}.png"
+        trending_searches_label = Label(text="Select 5 trending searches:")
+        layout.add_widget(trending_searches_label)
 
-        # Download and save the image
-        image_path = os.path.join("images", filename)
-        resp = requests.get(image_url)
-        with open(image_path, "wb") as f:
-            f.write(resp.content)
+        trending_searches_grid = GridLayout(cols=1, spacing="5dp", size_hint=(0.8, None))
+        trending_searches_grid.bind(minimum_height=trending_searches_grid.setter("height"))
 
-        print("Image downloaded:", image_path)
-        image_paths.append(image_path)
+        trending_searches_scrollview = ScrollView(size_hint=(1, 0.6))
+        trending_searches_scrollview.add_widget(trending_searches_grid)
 
-    return image_paths
+        self.trending_searches_layout = trending_searches_grid
+        layout.add_widget(trending_searches_scrollview)
 
-def generate_audio(audio_prompt):
-    # Instantiates a client
-    client = texttospeech.TextToSpeechClient()
+        self.retrieve_trending_searches(None)  # Call retrieve_trending_searches to populate the trending searches
 
-    # Set the text input to be synthesized
-    synthesis_input = texttospeech.SynthesisInput(text=audio_prompt)
+        generate_button = Button(text="Generate Story", on_press=self.generate_story)
+        layout.add_widget(generate_button)
 
-    voice = texttospeech.VoiceSelectionParams(
-        name="en-US-Standard-J", language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.MALE
-    )
-    # Select the type of audio file you want returned
-    audio_config = texttospeech.AudioConfig(
-        audio_encoding=texttospeech.AudioEncoding.LINEAR16
-    )
+        self.progress_bar = ProgressBar(max=100)
+        layout.add_widget(self.progress_bar)
 
-    response = client.synthesize_speech(
-        input=synthesis_input, voice=voice, audio_config=audio_config
-    )
+        return layout
 
-    filename = re.sub(r'\W+', '', audio_prompt)
-    filename += ".wav"
+    def retrieve_trending_searches(self, instance):
+        threading.Thread(target=self.get_trending_searches).start()
 
-    # Save the audio to the 'audio' directory
-    audio_path = os.path.join("audio", filename)
+    def get_trending_searches(self):
+        trending_searches = self.top_trending_searches(20)
+        Clock.schedule_once(lambda dt: self.show_trending_searches(trending_searches), 0)
 
-    # The response's audio_content is binary.
-    with open(audio_path, "wb") as out:
-        # Write the response to the output file.
-        out.write(response.audio_content)
-        print('Audio content written to file', audio_path)
-    return audio_path
 
-def generate_video(media_paths, output_filename):
-    # Initialize a list to store the duration of each audio file (in seconds)
-    audio_durations = []
+    def show_trending_searches(self, trending_searches):
+        for search in trending_searches:
+            checkbox_layout = BoxLayout(orientation="horizontal", size_hint=(1, None), height="40dp")
 
-    # Initialize an empty audio track
-    combined_audio = AudioSegment.empty()
+            checkbox = CheckBox(
+                size_hint=(None, None),
+                size=("40dp", "40dp")
+            )
+            checkbox_layout.add_widget(checkbox)
 
-    # Initialize an empty list to store all the image paths
-    all_image_paths = []
+            label = Label(
+                text=search,
+                font_size=12,
+                color=get_color_from_hex('#FFFFFF'),
+                size_hint=(1, None),
+                height="30dp"
+            )
+            checkbox_layout.add_widget(label)
 
-    # Initialize an empty list to store all subtitle clips
-    subtitle_clips = []
+            self.trending_searches_layout.add_widget(checkbox_layout)
 
-    # Initialize a variable to track the current time in the video
-    current_time = 0
+        # Set the background color of the window to black
+        Window.clearcolor = get_color_from_hex('#000000')
 
-    # Loop through each tuple in media_paths
-    for image_paths, audio_path, sentence in media_paths:
-        # Load the audio file
-        print(audio_path)
-        audio = AudioSegment.from_file(audio_path, format="wav")
+    def generate_story(self, instance):
+        tone = self.tone_input.text.strip()
+        length = int(self.length_input.text.strip())
+        modifier = self.modifier_input.text.strip()
+        count = int(self.count_input.text.strip())
 
-        # Get the duration of the audio file in seconds
-        duration = len(audio) / 1000  # Convert from milliseconds to seconds
+        if tone and length and modifier and count:
+            #self.init()
 
-        # Append the duration divided by the number of image variations
-        # This will make each image variation appear for an equal amount of time
-        audio_durations.extend([duration / len(image_paths)] * len(image_paths))
+            selected_searches = []
+            for checkbox_layout in self.trending_searches_layout.children:
+                checkbox = checkbox_layout.children[0].children[0]  # Access the CheckBox object
+                if isinstance(checkbox, CheckBox) and checkbox.active:
+                    selected_searches.append(checkbox_layout.children[1].text)
 
-        # Concatenate the audio file to the end of the combined audio track
-        combined_audio += audio
+            if len(selected_searches) <= 5:
+                sentences = self.generate_story_sentences(tone, length, selected_searches)
+                media_paths = []
 
-        # Extend the all_image_paths list with the image paths
-        all_image_paths.extend(image_paths)
+                shutil.rmtree("images")  # Delete the "images" directory and its contents
+                os.makedirs("images")  # Recreate an empty "images" directory
 
-        # Calculate the start time and end time for this sentence
-        start_time = current_time
-        end_time = current_time + duration
+                shutil.rmtree("audio")  # Delete the "audio" directory and its contents
+                os.makedirs("audio")  # Recreate an empty "audio" directory
 
-        # Wrap long sentences
-        wrapped_sentence = "\n".join(textwrap.wrap(sentence, width=50))
+                # Start a new thread for image and audio generation
+                threading.Thread(target=self.generate_media, args=(sentences, modifier, count, media_paths)).start()
 
-        # Create a subtitle clip for this sentence
-        subtitle_clip = TextClip(wrapped_sentence, fontsize=36, color='white')
+            else:
+                print("Please select up to 5 trending searches.")
 
-        # Position the subtitle off the bottom of the screen
-        subtitle_clip = subtitle_clip.set_position(('center', 1300))  # You can adjust the y-value as needed
+        else:
+            print("Please provide all required inputs.")
 
-        # Set the start and end times for this subtitle
-        subtitle_clip = subtitle_clip.set_start(start_time).set_end(end_time)
+    def generate_media(self, sentences, modifier, count, media_paths):
+        total_sentences = len(sentences)
+        generated_sentences = 0
 
-        # Add this subtitle clip to the list
-        subtitle_clips.append(subtitle_clip)
+        for i, sentence in enumerate(sentences):
+            print(sentence)
 
-        # Update the current time
-        current_time = end_time
+            image_paths = self.generate_image(sentence, modifier, count)
+            audio_path = self.generate_audio(sentence)
+            media_paths.append((image_paths, audio_path, sentence))
 
-    # Save the combined audio track to a file
-    combined_audio.export("audio/combined_audio.wav", format='wav')
+            generated_sentences += 1
+            progress = generated_sentences / total_sentences * 100  # Calculate the progress percentage
 
-    # Create an image sequence clip with the durations specified
-    clip = ImageSequenceClip(all_image_paths, durations=audio_durations)
+            # Schedule a function to update the progress bar from the main thread
+            Clock.schedule_once(lambda dt, val=progress: self.update_progress(val))
 
-    # Set the audio of the video clip to the combined audio track
-    clip = clip.set_audio(AudioFileClip("audio/combined_audio.wav"))  # Use AudioFileClip instead of a string
+        # After all media is generated, continue with video creation
+        Clock.schedule_once(lambda dt: self.create_video(media_paths))
 
-    # Resize the clip to a fixed height while maintaining aspect ratio
-    clip = clip.resize(height=900)  # You can choose a suitable height based on the original image size
+    def update_progress(self, value):
+        self.progress_bar.value = value
 
-    # Create a black background clip with a 9:16 aspect ratio
-    background = ColorClip((900, 1600), col=[0, 0, 0], duration=clip.duration)  # 900 (width) and 1600 (height) for a 9:16 aspect ratio
+    def generate_story_sentences(self, tone, length, selected_searches):
+        selected_searches_str = ", ".join(selected_searches)
+        # Specify your API endpoint here
+        url = "https://your-proxy-url.com/api/chat/completions"  # Change this URL to your endpoint
+        payload = {
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": f"Make sure to use the following words in your story. Take their order into account, the first terms are most popular. {selected_searches_str}. Your story should only be {length} paragraphs long.",
+                },
+                {
+                    "role": "user",
+                    "content": f"Please write a {tone} {length}-paragraph story.",
+                },
+            ],
+        }
+        response = requests.post(url, json=payload)
+        response_content = response.json()["choices"][0]["message"]["content"]
+        sentences = sent_tokenize(response_content)
+        return sentences
 
-    # Prepare list of all clips (background, main content, and subtitles)
-    clips = [background, clip.set_position("center")] + subtitle_clips
+    def generate_image(self, sentence, modifier, count):
+        image_prompt = sentence + " " + modifier
+        # Specify your API endpoint here
+        url = "https://your-proxy-url.com/api/images"  # Change this URL to your endpoint
+        payload = {
+            "prompt": image_prompt,
+            "n": count,
+            "size": "512x512",
+        }
+        response = requests.post(url, json=payload)
 
-    # Generate the final composite clip
-    final_clip = CompositeVideoClip(clips)
+        image_paths = []
+        for i, data in enumerate(response.json()["data"]):
+            image_url = data["url"]
+            filename = re.sub(r"\W+", "", image_prompt) + f"_version_{i}.png"
 
-    # Write the result to a file
-    final_clip.write_videofile(output_filename, codec='libx264', fps=24)
+            # Download and save the image
+            image_path = os.path.join("images", filename)
+            resp = requests.get(image_url)
+            with open(image_path, "wb") as f:
+                f.write(resp.content)
 
-    # Delete the temporary combined audio file
-    os.remove("audio/combined_audio.wav")
+            print("Image downloaded:", image_path)
+            image_paths.append(image_path)
 
-def top_trending_searches(n):
-    pytrends = TrendReq(hl='en-US', tz=360)
-    trending_searches_df = pytrends.trending_searches(pn='united_states')
-    trending_searches_list = trending_searches_df[0].values.tolist()
-    return trending_searches_list[:n]
+        return image_paths
+
+    def generate_audio(self, sentence):
+        client = texttospeech.TextToSpeechClient()
+
+        synthesis_input = texttospeech.SynthesisInput(text=sentence)
+
+        voice = texttospeech.VoiceSelectionParams(
+            name="en-US-Standard-J", language_code="en-US", ssml_gender=texttospeech.SsmlVoiceGender.MALE
+        )
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.LINEAR16
+        )
+
+        response = client.synthesize_speech(
+            input=synthesis_input, voice=voice, audio_config=audio_config
+        )
+
+        filename = re.sub(r"\W+", "", sentence)
+        filename += ".wav"
+
+        audio_path = os.path.join("audio", filename)
+
+        with open(audio_path, "wb") as out:
+            out.write(response.audio_content)
+            print("Audio content written to file", audio_path)
+        return audio_path
+
+    def create_video(self, media_paths):
+        audio_durations = []
+        combined_audio = AudioSegment.empty()
+        all_image_paths = []
+        subtitle_clips = []
+        current_time = 0
+
+        for image_paths, audio_path, sentence in media_paths:
+            print(audio_path)
+            audio = AudioSegment.from_file(audio_path, format="wav")
+
+            duration = len(audio) / 1000
+            audio_durations.extend([duration / len(image_paths)] * len(image_paths))
+
+            combined_audio += audio
+
+            all_image_paths.extend(image_paths)
+
+            start_time = current_time
+            end_time = current_time + duration
+
+            wrapped_sentence = "\n".join(textwrap.wrap(sentence, width=50))
+
+            subtitle_clip = TextClip(wrapped_sentence, fontsize=36, color="white")
+            subtitle_clip = subtitle_clip.set_position(("center", 1300))
+            subtitle_clip = subtitle_clip.set_start(start_time).set_end(end_time)
+
+            subtitle_clips.append(subtitle_clip)
+
+            current_time = end_time
+
+        combined_audio.export("audio/combined_audio.wav", format="wav")
+
+        clip = ImageSequenceClip(all_image_paths, durations=audio_durations)
+        clip = clip.set_audio(AudioFileClip("audio/combined_audio.wav"))
+        clip = clip.resize(height=900)
+
+        background = ColorClip((900, 1600), col=[0, 0, 0], duration=clip.duration)
+
+        clips = [background, clip.set_position("center")] + subtitle_clips
+
+        final_clip = CompositeVideoClip(clips)
+
+        final_clip.write_videofile("output.mp4", codec="libx264", fps=24)
+
+        os.remove("audio/combined_audio.wav")
+
+    def top_trending_searches(self, n):
+        pytrends = TrendReq(hl="en-US", tz=360)
+        trending_searches_df = pytrends.trending_searches(pn="united_states")
+        trending_searches_list = trending_searches_df[0].values.tolist()
+        return trending_searches_list[:n]
+
+    def play_video(self, video_path):
+        os.startfile(video_path)  # Open the video file using the default player
+
 
 if __name__ == "__main__":
-    # Check if a story prompt argument is provided
-    if len(sys.argv) > 4:
-        tone = sys.argv[1]
-        length = int(sys.argv[2])
-        modifier = sys.argv[3]
-        count = int(sys.argv[4])
-        init()
-        sentences = generate_story(tone, length)
-        media_paths = []
-        os.makedirs("images", exist_ok=True)  # Ensure the 'images' directory exists
-        for sentence in sentences:
-            print(sentence)
-            image_paths = generate_image(sentence, tone, modifier, count)  # Now, image_paths is a list
-            audio_path = generate_audio(sentence)
-            media_paths.append((image_paths, audio_path, sentence))  # Here, image_paths is a list
-      
-        generate_video(media_paths, "output.mp4") 
-    else:
-        print("Please provide a story modifier. (Scary, Cool, etc)")
+    StoryGeneratorApp().run()
