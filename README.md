@@ -33,11 +33,11 @@ To install AI Video Maker, follow these steps:
 
 1. Clone the repository:
     ```
-    git clone https://github.com/YOUR-USERNAME/AI-Video-Maker.git
+    git clone https://github.com/tylerwinn/AIVideoMaker.git
     ```
 2. Navigate to the project directory:
     ```
-    cd AI-Video-Maker
+    cd AIVideoMaker
     ```
 3. Install the required Python packages:
     ```
@@ -49,10 +49,13 @@ To install AI Video Maker, follow these steps:
 
 Before running the app, you must configure it by setting the following:
 
-1. In the file `ai_video_maker.py`, set the `credential_path` variable to the path of your Google API JSON file.
+1. In the file `video.py`, set the `credential_path` variable to the path of your Google API JSON file.
 2. In the same file, update the `url` variable under the `generate_script` method with your GPT proxy URL.
 
 ## Running AI Video Maker
 
 To run AI Video Maker, execute the following command:
+```
+python video.py
+```
 
