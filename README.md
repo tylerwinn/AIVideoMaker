@@ -2,6 +2,11 @@
 
 AI Video Maker is a Python application that generates videos based on user input. It leverages the Google Text-to-Speech API for voiceover and a GPT model for script generation. This app also fetches trending topics and allows users to select from them.
 
+## Examples/Results
+
+[TikTok](https://www.tiktok.com/@tylerdoesthings2/video/7242107662530268459) </br>
+[Youtube](https://www.youtube.com/watch?v=2ZVtaHbvU4I)
+
 ## Prerequisites
 
 Before you begin, ensure you have met the following requirements:
