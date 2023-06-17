@@ -29,8 +29,7 @@ Before you begin, ensure you have met the following requirements:
 
 ## Setting Up GPT Proxy URL
 
-1. Set up an API that serves as a proxy to the GPT model.
-2. Note down the proxy URL endpoint, which will be used in the application.
+[https://github.com/tylerwinn/chatgpt-proxy](https://github.com/tylerwinn/chatgpt-proxy)
 
 ## Installing AI Video Maker
 
